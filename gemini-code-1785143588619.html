@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>相機即時濾色 - 流暢不卡版</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #000;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+
+        .canvas-container {
+            flex-grow: 1;
+            width: 100%;
+            background-color: #222;
+            position: relative;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .toolbar {
+            height: 80px;
+            background-color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            padding-bottom: env(safe-area-inset-bottom);
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            z-index: 20;
+        }
+
+        .tool-btn {
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        #btn-red { background-color: #ff0000; color: white; }
+        #btn-blue { background-color: #0000ff; color: white; }
+        #btn-none { background-color: #e0e0e0; color: #333; }
+        .tool-btn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+
+    <div class="canvas-container">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="toolbar">
+        <button id="btn-red" class="tool-btn">🔴 紅濾鏡</button>
+        <button id="btn-blue" class="tool-btn">🔵 藍濾鏡</button>
+        <button id="btn-none" class="tool-btn">⚪ 關閉</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // --- 解決卡頓的關鍵修改區 ---
+        const video = document.createElement('video');
+        video.autoplay = true;
+        video.playsInline = true;
+        video.muted = true; // 【關鍵1】一定要設為靜音，手機才會允許自動播放！
+
+        let currentFilter = 'none';
+
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+            .then(stream => {
+                video.srcObject = stream;
+                
+                // 【關鍵2】等待相機資料載入後，強制呼叫 play()
+                video.onloadedmetadata = () => {
+                    video.play().then(() => {
+                        // 確定影片開始播放了，才啟動畫面的刷新迴圈
+                        requestAnimationFrame(renderLoop);
+                    }).catch(e => {
+                        console.error("播放被阻擋", e);
+                        alert("請點擊畫面任意處以啟動相機");
+                    });
+                };
+            })
+            .catch(err => {
+                console.error("無法存取相機", err);
+                alert("請允許網頁存取相機權限喔！");
+            });
+
+        // 畫面渲染迴圈
+        function renderLoop() {
+            if (video.readyState >= 2 && !video.paused) { // 確保影片真的有在播
+                ctx.globalCompositeOperation = 'source-over';
+
+                const canvasRatio = canvas.width / canvas.height;
+                const videoRatio = video.videoWidth / video.videoHeight;
+                let drawWidth, drawHeight, startX, startY;
+
+                if (canvasRatio > videoRatio) {
+                    drawWidth = canvas.width;
+                    drawHeight = canvas.width / videoRatio;
+                    startX = 0;
+                    startY = (canvas.height - drawHeight) / 2;
+                } else {
+                    drawWidth = canvas.height * videoRatio;
+                    drawHeight = canvas.height;
+                    startX = (canvas.width - drawWidth) / 2;
+                    startY = 0;
+                }
+
+                ctx.drawImage(video, startX, startY, drawWidth, drawHeight);
+
+                // 加上濾色片
+                if (currentFilter !== 'none') {
+                    ctx.globalCompositeOperation = 'multiply';
+                    if (currentFilter === 'red') {
+                        ctx.fillStyle = 'rgb(255, 0, 0)';
+                    } else if (currentFilter === 'blue') {
+                        ctx.fillStyle = 'rgb(0, 0, 255)';
+                    }
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+            }
+
+            requestAnimationFrame(renderLoop);
+        }
+
+        // 綁定按鈕
+        document.getElementById('btn-red').onclick = () => currentFilter = 'red';
+        document.getElementById('btn-blue').onclick = () => currentFilter = 'blue';
+        document.getElementById('btn-none').onclick = () => currentFilter = 'none';
+        
+        // 【關鍵3】如果在某些極端手機上還是不播，點擊畫面強制啟動
+        document.body.addEventListener('click', () => {
+            if (video.paused) video.play();
+        });
+    </script>
+
+</body>
+</html>
